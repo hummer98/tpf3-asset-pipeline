@@ -57,6 +57,10 @@ python3 tests/test_me_import.py                  # me_import unit tests (no edit
 - Don't use `xdotool` clicks for this on Wayland: it can't move the pointer,
   so clicks land on whatever is under the cursor (e.g. the running game).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
