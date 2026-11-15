@@ -47,10 +47,12 @@ def material(name, image=None, color=(0.8, 0.8, 0.8, 1)):
     return m
 
 
-def image(name, size, fill):
-    """Procedural image; fill(x, y) -> (r, g, b, a) in 0..1."""
+def image(name, size, fill, alpha=False):
+    """Procedural image; fill(x, y) -> (r, g, b, a) in 0..1.
+    Opaque by default: a 32-bit TGA makes the Model Editor compress albedo to
+    BC3/DXT5 and warn that opaque textures should be BC1/DXT1."""
     w, h = size
-    img = bpy.data.images.new(name, w, h, alpha=True)
+    img = bpy.data.images.new(name, w, h, alpha=alpha)
     px = [0.0] * (w * h * 4)
     for y in range(h):
         for x in range(w):

@@ -2,3 +2,4 @@ out/
 __pycache__/
 .test_out_*/
 model_editor.log
+.venv/

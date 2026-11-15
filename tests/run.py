@@ -57,7 +57,11 @@ def test_asset(name, tmp):
         stem = t[:-4] if t.endswith(".tga") else t
         check(t.endswith(".tga") and stem.endswith(MAP_SUFFIXES), f"texture {t} is TGA with a known map suffix")
         with open(os.path.join(d, t), "rb") as f:
-            check(len(f.read(18)) == 18, f"texture {t} has TGA header")
+            hdr = f.read(18)
+        check(len(hdr) == 18, f"texture {t} has TGA header")
+        if stem.endswith(("_alb", "_albedo")):
+            # Opaque albedo must be 24-bit or the editor compresses it as BC3 and warns.
+            check(hdr[16] == 24, f"texture {t} is 24-bit (opaque), got {hdr[16]}")
     check(sorted(rep["previews"]) == sorted(f"{name}_preview_{v}.png" for v in PREVIEW_VIEWS),
           "all preview views rendered")
     pd = os.path.join(tmp, "_preview", name)
