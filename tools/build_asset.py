@@ -6,10 +6,13 @@ usage: tools/blender.sh tools/build_asset.py -- <asset_name> [--no-preview]
 model.py must define build(lib) -> dict:
   {"lods": {0: [obj, ...], 1: [...]}, "textures": [(bpy_image, "<mat>_alb.tga"), ...]}
 """
+import contextlib
 import importlib.util
 import json
 import math
+import re
 import os
+import shutil
 import sys
 
 import bpy
@@ -35,6 +38,20 @@ def load_model(name):
     return mod
 
 
+def validate(name, result):
+    lods = result.get("lods") or {}
+    if 0 not in lods:
+        raise SystemExit(f"{name}: LOD0 missing (Model Editor requires _lod0.fbx)")
+    for lod, objs in lods.items():
+        if not objs:
+            raise SystemExit(f"{name}: LOD{lod} has no objects")
+        for o in objs:
+            # Model Editor derives the element name from the object name and adds
+            # _lodN itself, so a suffix here would double it and differ per LOD.
+            if re.search(r"_lod\d+$", o.name):
+                raise SystemExit(f"{name}: object '{o.name}' must not end with _lodN")
+
+
 def tri_count(objs):
     deps = bpy.context.evaluated_depsgraph_get()
     n = 0
@@ -46,6 +63,25 @@ def tri_count(objs):
         n += len(m.loop_triangles)
         o.evaluated_get(deps).to_mesh_clear()
     return n
+
+
+@contextlib.contextmanager
+def lod_names(objs, all_objs):
+    """Every LOD shares element names (e.g. 'bench'), but Blender renames
+    duplicates to 'bench.001'. Park the other LODs under temp names while
+    exporting so this LOD's objects get the clean name in the FBX."""
+    saved = {o: o.name for o in all_objs}
+    for i, o in enumerate(all_objs):
+        o.name = f"__lodtmp{i}"
+    for o in objs:
+        o.name = re.sub(r"\.\d{3}$", "", saved[o])
+    try:
+        yield
+    finally:
+        for o in all_objs:
+            o.name = f"__lodtmp_restore{id(o)}"
+        for o, n in saved.items():
+            o.name = n
 
 
 def export_lod(objs, path):
@@ -122,22 +158,32 @@ def main():
     name, preview = parse_args()
     # TF3_ASSETS_OUT lets tests build into a scratch dir without touching out/.
     out_dir = os.path.join(os.environ.get("TF3_ASSETS_OUT") or os.path.join(ROOT, "out"), name)
-    os.makedirs(out_dir, exist_ok=True)
+    # The whole out/<name>/ folder gets dropped into the Model Editor, so stale
+    # LODs/textures from earlier builds must not survive, and previews/report live
+    # outside it in out/_preview/<name>/.
+    base = os.path.dirname(out_dir)
+    preview_dir = os.path.join(base, "_preview", name)
+    for d in (out_dir, preview_dir):
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d)
     tf3lib.reset_scene()
 
     result = load_model(name).build(tf3lib)
+    validate(name, result)
     report = {"asset": name, "lods": {}, "textures": [], "previews": []}
 
     for img, fname in result.get("textures", []):
         path = os.path.join(out_dir, fname)
         img.filepath_raw = path
-        img.file_format = "TARGA"
+        img.file_format = "TARGA_RAW"  # RLE support in the DDS converter is unverified
         img.save()
         report["textures"].append(fname)
 
+    all_lod_objs = [o for objs in result["lods"].values() for o in objs]
     for lod, objs in sorted(result["lods"].items()):
         path = os.path.join(out_dir, f"{name}_lod{lod}.fbx")
-        export_lod(objs, path)
+        with lod_names(objs, all_lod_objs):
+            export_lod(objs, path)
         lo, hi = bounds(objs)
         report["lods"][lod] = {"fbx": os.path.basename(path), "tris": tri_count(objs),
                                "size_m": [round(v, 3) for v in (hi - lo)]}
@@ -148,9 +194,9 @@ def main():
             if lod != 0:
                 for o in objs:
                     o.hide_render = True
-        report["previews"] = [os.path.basename(p) for p in render_previews(lod0, out_dir, name)]
+        report["previews"] = [os.path.basename(p) for p in render_previews(lod0, preview_dir, name)]
 
-    with open(os.path.join(out_dir, "report.json"), "w") as f:
+    with open(os.path.join(preview_dir, "report.json"), "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print("[build_asset] " + json.dumps(report, ensure_ascii=False))
 

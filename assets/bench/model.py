@@ -27,13 +27,13 @@ def build(lib):
         parts.append(lib.box("leg_b", (0.05, 0.05, 0.85), (sx, 0.27, 0.425), m_iron))
         parts.append(lib.box("arm", (0.05, 0.5, 0.04), (sx, 0.03, 0.66), m_iron))
         parts.append(lib.box("rail", (0.05, 0.5, 0.04), (sx, 0.03, H - 0.04), m_iron))
-    lod0 = lib.join(parts, "bench_lod0")
+    lod0 = lib.join(parts, "bench")
 
     # LOD1: seat + back as two blocks, legs merged into one slab per side.
     lp = [lib.box("seat", (L, 0.45, 0.035), (0, -0.01, H), m_wood),
           lib.box("back", (L, 0.035, 0.27), (0, 0.24, 0.70), m_wood)]
     for sx in (-0.75, 0.75):
         lp.append(lib.box("side", (0.05, 0.5, 0.66), (sx, 0.03, 0.33), m_iron))
-    lod1 = lib.join(lp, "bench_lod1")
+    lod1 = lib.join(lp, "bench")
 
     return {"lods": {0: [lod0], 1: [lod1]}, "textures": [(wood_img, "bench_wood_alb.tga")]}
