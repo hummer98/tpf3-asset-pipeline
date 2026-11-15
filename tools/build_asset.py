@@ -70,18 +70,22 @@ def lod_names(objs, all_objs):
     """Every LOD shares element names (e.g. 'bench'), but Blender renames
     duplicates to 'bench.001'. Park the other LODs under temp names while
     exporting so this LOD's objects get the clean name in the FBX."""
-    saved = {o: o.name for o in all_objs}
+    saved = {o: (o.name, o.data.name) for o in all_objs}
     for i, o in enumerate(all_objs):
         o.name = f"__lodtmp{i}"
+        o.data.name = f"__lodtmp{i}"
     for o in objs:
-        o.name = re.sub(r"\.\d{3}$", "", saved[o])
+        o.name = re.sub(r"\.\d{3}$", "", saved[o][0])
+        # The Model Editor names .msh files after the mesh datablock, not the object
+        # (otherwise they come out as Cube_lod0.msh / Cube.013_lod1.msh).
+        o.data.name = o.name
     try:
         yield
     finally:
-        for o in all_objs:
-            o.name = f"__lodtmp_restore{id(o)}"
-        for o, n in saved.items():
-            o.name = n
+        for i, o in enumerate(all_objs):
+            o.name = o.data.name = f"__lodtmp_restore{i}"
+        for o, (n, dn) in saved.items():
+            o.name, o.data.name = n, dn
 
 
 def export_lod(objs, path):

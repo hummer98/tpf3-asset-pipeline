@@ -45,6 +45,7 @@ for path in sys.argv[sys.argv.index("--") + 1:]:
     out[path] = {
         "names": sorted(o.name for o in objs),
         "types": sorted({o.type for o in objs}),
+        "mesh_names": sorted({o.data.name for o in meshes}),
         "scale": [round(v, 3) for v in meshes[0].scale] if meshes else None,
         "raw_extent": [round(max(c[k] for c in verts) - min(c[k] for c in verts), 3) for k in range(3)] if verts else None,
         "unit_scale_factor": unit_scale_factor(path),

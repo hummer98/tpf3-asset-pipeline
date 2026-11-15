@@ -79,6 +79,7 @@ def test_asset(name, tmp):
         used_mats |= set(r["materials"])
         check(r["types"] == ["MESH"], f"lod{lod} contains only meshes {r['types']}")
         check(r["names"] == [name], f"lod{lod} element name is '{name}' without _lodN {r['names']}")
+        check(r["mesh_names"] == [name], f"lod{lod} mesh datablock named '{name}' (drives .msh file name) {r['mesh_names']}")
         check("preview_ground" not in r["materials"], f"lod{lod} has no preview objects")
         check(r["has_uv"], f"lod{lod} has UVs")
         check(r["unit_scale_factor"] == 100.0, f"lod{lod} FBX UnitScaleFactor=100 (metres), got {r['unit_scale_factor']}")
