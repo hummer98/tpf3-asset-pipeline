@@ -167,13 +167,13 @@ def main():
     # outside it in out/_preview/<name>/.
     base = os.path.dirname(out_dir)
     preview_dir = os.path.join(base, "_preview", name)
+    tf3lib.reset_scene()
+    result = load_model(name).build(tf3lib)
+    # Validate before wiping, so a broken model.py keeps the last good build.
+    validate(name, result)
     for d in (out_dir, preview_dir):
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d)
-    tf3lib.reset_scene()
-
-    result = load_model(name).build(tf3lib)
-    validate(name, result)
     report = {"asset": name, "lods": {}, "textures": [], "previews": []}
 
     for img, fname in result.get("textures", []):

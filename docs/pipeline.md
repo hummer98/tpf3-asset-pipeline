@@ -5,6 +5,7 @@ Claude Code (または人間) が Python でモデルを書き、Transport Fever
 
 - 作成: 2026-11-15
 - 動作確認環境: Bazzite (Fedora Atomic) / KDE Plasma Wayland / RTX 3090 / Blender 5.3 (flatpak) / TF3 Model Editor version 13
+- 環境固有の値: Steam ユーザー ID `<steam_user_id>`、TF3 の app ID `3493540`、ゲームのパスは `tools/me_import.py` の先頭 (`GAME` / `USERDATA` / `SETTINGS`) に直書き。別環境ではここを書き換える。
 
 ---
 
@@ -62,12 +63,19 @@ tools/blender.sh tools/build_asset.py -- <name>
 #   → [me_import] {"bbox_matches_build": true, ...} なら成功 (exit 0)
 
 # テスト
-python3 tests/run.py               # 全アセットのビルド + FBX 検証 + 異常系
+python3 tests/run.py               # 全アセットのビルド + FBX 検証 + 異常系 (異常系は引数なしのときだけ走る)
+python3 tests/run.py bench         # 指定アセットだけ (異常系・古い出力の掃除テストは省略)
 python3 tests/test_me_import.py    # me_import の純関数 (エディタ不要)
 ```
 
-`me_import.py` の終了コード: 0 = 成功、1 = 途中で失敗 (メッセージ参照)、2 = 保存できたが寸法不一致。
+`build_asset.py` に `--no-preview` を付けるとプレビュー描画を省く。
+環境変数 `TF3_ASSETS_OUT` で出力先を変えられる (テスト用。`me_import.py` は常に `out/` を読む)。
+
+`me_import.py` の終了コード: 0 = 成功、1 = 途中で失敗 (メッセージ、または XDND 失敗などは traceback)、
+2 = 保存できたが寸法不一致 (argparse の引数エラーも 2 になる)。
 `--keep-open` を付けると終了後もエディタを開いたままにする (目視確認用)。
+**開いたままのエディタを閉じないと、次の実行は "already running" で止まる。**
+`--mod <フォルダ名>` で保存先を変えられる。この値は設定ファイルに書き込まれ、次に手で開いたときもその MOD が選ばれる。
 
 ## 3. Blender 側 (tools/build_asset.py, tools/tf3lib.py)
 
@@ -79,20 +87,25 @@ python3 tests/test_me_import.py    # me_import の純関数 (エディタ不要)
 def build(lib):
     img = lib.image("bench_wood_alb", (256, 256), fill_fn)    # 既定で不透明 (24bit)
     m_wood = lib.material("bench_wood", img)                  # マテリアル名がテクスチャ探索のキー
-    lod0 = lib.join([lib.box(...), ...], "bench")             # オブジェクト名 = 要素名 (_lodN は付けない)
-    lod1 = lib.join([...], "bench")
+    lod0 = lib.join([lib.box(...), ...], "bench")             # 各 LOD は 1 オブジェクトに join し、名前 = アセット名
+    lod1 = lib.join([...], "bench")                           # (2 個目は Blender が bench.001 にするが書き出し時に戻る)
     return {"lods": {0: [lod0], 1: [lod1]},
             "textures": [(img, "bench_wood_alb.tga")]}
 ```
 
 `tools/tf3lib.py` には `box` (キューブ投影 UV 付き)、`join`、`material`、`image` (手続き生成) がある。
 
+**規約: 1 LOD = 1 オブジェクト、名前はアセット名と同じ。** `_lodN` は付けない (Model Editor が付ける)。
+build 側は LOD ごとにオブジェクトのリストを受け付けるが、テスト (`tests/run.py`) は FBX 内のオブジェクト名とメッシュ名が
+`[<name>]` だけであることを要求する。`.mdl` の要素名・`.msh` のファイル名がこの名前から決まるため。
+アルファが必要なテクスチャは `lib.image(..., alpha=True)` を明示する (既定は不透明)。
+
 ### build_asset.py がやること
 
-1. `build()` の戻り値を検査 (LOD0 必須、空の LOD 禁止、`_lodN` で終わる名前禁止)。違反したら何も書き出さずに止める。
-2. `out/<name>/` と `out/_preview/<name>/` を作り直す。フォルダごと Model Editor に渡す運用だったため、古い LOD やテクスチャが残らないようにしている。
+1. `build()` の戻り値を検査 (LOD0 必須、空の LOD 禁止、`_lodN` で終わる名前禁止)。違反したら何も書き出さずに止める。前回の正常な出力はそのまま残る。
+2. 検査が通ってから `out/<name>/` と `out/_preview/<name>/` を作り直す。Model Editor は同じフォルダから `_lodN.fbx` とテクスチャを探すので、古い LOD やテクスチャが残らないようにしている。
 3. テクスチャを無圧縮 TGA で保存する。
-4. LOD ごとに FBX を書き出す。このとき全 LOD のオブジェクト名とメッシュデータ名を一時的に `<name>` にそろえる (§6 の 3 と 4)。
+4. LOD ごとに FBX を書き出す。このとき、書き出す LOD のオブジェクト名を「自身の名前から `.001` などを除いた名前」に、メッシュデータ名もそれと同じにする。他の LOD は一時名に退避し、書き出し後に元に戻す (§6 の 3 と 4)。
 5. 地面・太陽・カメラを足して、4 方向のプレビューを EEVEE で描画する。書き出しが先なので FBX には混入しない。
 6. `report.json` に LOD ごとの三角形数・寸法を書く。
 
@@ -102,7 +115,9 @@ def build(lib):
 |---|---|---|
 | 軸 | Blender 既定 (-Z forward, Y up) | Model Editor の "Use Blender Coordinate System" (= `importOptions.blenderMode`) と対になる |
 | 単位 | `FBX_SCALE_UNITS` (UnitScaleFactor=100 = メートル) | 寸法 1:1 を Model Editor で確認済み |
-| テクスチャパス | `path_mode=STRIP` | `RelativeFilename` がファイル名だけになる (`FileName` は Blender の仕様で絶対パスのまま) |
+| テクスチャパス | `path_mode=STRIP`, `embed_textures=False` | `RelativeFilename` がファイル名だけになる (`FileName` は Blender の仕様で絶対パスのまま) |
+| 対象 | `use_selection=True`, `object_types={"MESH"}` | その LOD のメッシュだけを出す |
+| その他 | `mesh_smooth_type="FACE"`, `use_mesh_modifiers=True` | 面単位のスムージング情報、モディファイアは適用して出す |
 
 ### テスト (tests/run.py, tests/check_fbx.py)
 
@@ -110,10 +125,10 @@ def build(lib):
 
 - LOD0 があること、FBX のファイル名、LOD1 の三角形が LOD0 より少ないこと
 - オブジェクト名とメッシュデータ名が `<name>` であること、中身がメッシュだけであること
-- FBX の `UnitScaleFactor` (バイナリから直接読む) が 100、頂点の範囲が report の寸法と一致すること
-- `RelativeFilename` がファイル名だけであること、テクスチャ名の接尾辞が既知のものであること、アルベドが 24bit であること
-- 異常系: LOD0 なし、空の LOD、`_lodN` 付きの名前で、ビルドが失敗し何も出力しないこと
-- 古い出力が再ビルドで消えること
+- FBX の `UnitScaleFactor` (バイナリから直接読む) が 100、オブジェクトの scale が 1、頂点の範囲が report の寸法と一致すること (寸法はソートして比較するので、軸の入れ替わりはここでは検出しない)
+- プレビュー用の物体 (地面など) が FBX に混入していないこと、出力フォルダが FBX とテクスチャだけであること、プレビュー 4 枚が PNG であること
+- `RelativeFilename` がファイル名だけであること、テクスチャ名の接尾辞が既知のものであること、アルベドが 24bit であること、TGA が無圧縮 (type 2) であること、テクスチャ付きマテリアルがどれかの LOD で使われていること
+- 異常系 (引数なしで実行したときのみ): LOD0 なし、空の LOD、`_lodN` 付きの名前で、ビルドが失敗し何も出力しないこと。失敗したビルドが前回の正常な出力を消さないこと。古い出力が再ビルドで消えること
 
 ## 4. Model Editor 側 (tools/me_import.py, tools/xwin.py)
 
@@ -132,13 +147,16 @@ def build(lib):
 
 1. 前提を確認する: `out/<name>/<name>_lod0.fbx` があること、`report.json` が FBX より新しいこと、保存先 MOD があること、**Model Editor が動いていないこと** (`/proc/*/exe` で探す)。
 2. 設定ファイル `~/.local/share/Transport Fever 3/model_editor_settings_v13.lua` を書き換える (§4.4)。一時ファイルに書いてから `os.replace` で置き換える。
-3. Model Editor を別セッション (`start_new_session`) で起動し、出力を `~/tf3_assets/model_editor.log` に書く。
+3. Model Editor を別セッション (`start_new_session`) で起動し、出力を `~/tf3_assets/model_editor.log` に書く。`ModelEditor.sh` は使わず、cwd をゲームのフォルダにして `model_editor/ModelEditor` を直接起動する (`LD_LIBRARY_PATH=model_editor/plugins:.` は自前で設定)。こうすると起動したプロセスの PID が分かり、手順 4 で照合できる。
 4. ログに `Set current mod: <mod>` が出るのを待つ。そのあと、自分が起動した PID (`_NET_WM_PID`) のウィンドウだけを探す。
 5. XDND で `<name>_lod0.fbx` をドロップする (§4.3)。lod1 以降は Model Editor が同じフォルダから自動で拾う。
 6. ログの `Validation: no errors` を待つ。エラーがあれば中止する。ウィンドウタイトルが `<mod>::/<name>/<name>.mdl` になったことも確認する。
 7. 保存先のファイルの更新時刻を記録してから、Save ボタン (ウィンドウ内座標 74,14) に合成クリックを送る。`.mdl` とすべての `.msh` が書き直されるまで待つ。クリックが空振りした場合に備え、1 回だけ再試行する。
-8. ファイルの書き込みが止まるのを待ってから `.mdl` の `bbMin`/`bbMax` を読み、report の寸法と照合する。
-9. 成功・失敗にかかわらず、起動した Model Editor を終了する (`--keep-open` 指定時を除く)。
+8. ファイルの書き込みが止まるのを待ってから (最大 30 秒) `.mdl` の `bbMin`/`bbMax` を読み、report の寸法と照合する。
+9. 成功・失敗にかかわらず、起動した Model Editor を終了する (SIGTERM、15 秒で終わらなければ SIGKILL。`--keep-open` 指定時を除く)。
+
+各段の待ち時間の上限: MOD 選択 90 秒 / ウィンドウ 30 秒 / 描画待ち 2 秒 / Validation 60 秒 / タイトル 15 秒 / 保存 20 秒 × 2 回 / 書き込み停止 30 秒。
+通常は全体で約 10 秒。大きく超える場合はどこかで待っている (`model_editor.log` を見る)。
 
 ### 4.3 XDND ドロップ (xwin.drop_files)
 
@@ -165,10 +183,10 @@ XDND のドラッグ元として、次の順にやり取りする。
 |---|---|---|
 | `importOptions.blenderMode` | `true` | UI の "Use Blender Coordinate System"。false だとログに "legacy axis system convention" と出る。`constructionImportOptions.blenderMode` は別物なので触らない |
 | `importOptions.overwriteMeshes/Materials/Textures` | `true` | false だと再取り込み時に MOD 内の古い `.msh`/`.mtl`/`.dds` が使い回され (`Found mesh to reuse`)、形を直しても反映されない |
-| `pathOptions.lastOpenedMod` | `{ "tf3_asset_sandbox_1", }` | 保存先 MOD。設定ファイルは**起動時にしか読まれない** |
+| `pathOptions.lastOpenedMod` | `{ "<--mod の値>", }` (既定 `tf3_asset_sandbox_1`) | 保存先 MOD。設定ファイルは**起動時にしか読まれない** |
 | `pathOptions.userDataPath` | `.../3493540/local/` (末尾 `/` 必須) | 空だと起動時に "please add the path to your userdata directory" と出て止まる |
 
-この設定は**元に戻さない**。手で Model Editor を使うときもこの設定のまま。
+この設定は起動前に書き換え、**元に戻さない** (途中で失敗した実行でも書き換わる)。手で Model Editor を使うときもこの設定のまま。
 元の設定は `model_editor_settings_v13.lua.bak-20261115` に残してある。
 
 ### 4.5 保存結果の検証
@@ -209,6 +227,7 @@ XDND のドラッグ元として、次の順にやり取りする。
 - bbox の照合は軸ごとの長さだけ。Y と Z が同じ長さのモデルでは向きの誤りを見逃す。LOD1 は照合していない。
 - Save ボタンの座標 (74,14) は UI スケール 1 が前提。
 - XDND のタイムスタンプは `CurrentTime` (ICCCM では非推奨だが SDL2 では動く)。
+- 環境固有のパス・ID は `me_import.py` に直書き (§冒頭)。
 - ゲーム内での見た目は未確認。staging_area の MOD がゲーム側で読み込まれるかも未確認。
 - 今後の候補 (2026-11-15 の調査より): Blender MCP (Blender Lab 公式) で対話的にモデリングする、TRELLIS.2 (ComfyUI) で画像から 3D の下書きを作る、nanobanana-adc でテクスチャ素材を作る。
 

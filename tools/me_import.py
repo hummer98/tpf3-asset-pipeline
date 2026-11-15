@@ -3,7 +3,7 @@
 
 The Model Editor has no CLI and ignores argv, so this:
   1. pins the editor settings (Blender axis mode, target mod, userdata path),
-  2. launches the editor (or reuses a running one),
+  2. launches a fresh editor (aborts if one is already running),
   3. drops out/<asset>/<asset>_lod0.fbx onto it via XDND,
   4. clicks Save with a synthetic event,
   5. checks the saved .mdl bounding box against the Blender build report.
@@ -246,8 +246,10 @@ def run(a, d, xwin, win_info, fbx, mod_dir, report_path):
     if not after:
         sys.exit(f"save did not rewrite .mdl and all .msh in {os.path.dirname(mdl)}")
     # Wait until the files stop changing so we never parse a half-written .mdl.
-    prev = None
+    prev, end = None, time.time() + 30
     while (cur := saved_files(mod_dir, a.asset)) != prev:
+        if time.time() > end:
+            sys.exit(f"saved files kept changing for 30 s in {os.path.dirname(mdl)}")
         prev = cur
         time.sleep(1)
 

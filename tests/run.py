@@ -97,8 +97,9 @@ def test_asset(name, tmp):
     # LODs may drop materials, but every textured material must appear in some LOD.
     tex_mats = {t[:-4].rsplit("_", 1)[0] for t in rep["textures"]}
     check(tex_mats <= used_mats, f"materials {sorted(used_mats)} cover textures {sorted(tex_mats)}")
-    with open(os.path.join(d, rep["textures"][0]), "rb") as f:
-        check(f.read(3)[2] == 2, "TGA saved uncompressed (type 2, not RLE)") if rep["textures"] else None
+    for t in rep["textures"]:
+        with open(os.path.join(d, t), "rb") as f:
+            check(f.read(3)[2] == 2, f"texture {t} saved uncompressed (type 2, not RLE)")
 
 
 def test_validation(tmp):
@@ -119,9 +120,29 @@ def test_validation(tmp):
             env = dict(os.environ, TF3_ASSETS_OUT=tmp)
             code, _ = blender(os.path.join(ROOT, "tools", "build_asset.py"), name, "--no-preview", env=env)
             check(code != 0, f"{case}: build fails")
-            check(not os.listdir(os.path.join(tmp, name)), f"{case}: nothing exported")
+            check(not os.path.exists(os.path.join(tmp, name)), f"{case}: nothing exported")
         finally:
             shutil.rmtree(os.path.join(adir, name))
+
+
+def test_failed_build_keeps_previous(tmp):
+    print("[failed build keeps previous output]")
+    env = dict(os.environ, TF3_ASSETS_OUT=tmp)
+    adir = os.path.join(ROOT, "assets", "_test_keep")
+    os.makedirs(adir)
+    try:
+        good = 'def build(lib):\n    o = lib.box("_test_keep", (1, 1, 1), (0, 0, 0))\n    return {"lods": {0: [o]}}\n'
+        with open(os.path.join(adir, "model.py"), "w") as f:
+            f.write(good)
+        code, _ = blender(os.path.join(ROOT, "tools", "build_asset.py"), "_test_keep", "--no-preview", env=env)
+        fbx = os.path.join(tmp, "_test_keep", "_test_keep_lod0.fbx")
+        check(code == 0 and os.path.exists(fbx), "good build exports")
+        with open(os.path.join(adir, "model.py"), "w") as f:
+            f.write(good.replace("{0: [o]}", "{1: [o]}"))
+        code, _ = blender(os.path.join(ROOT, "tools", "build_asset.py"), "_test_keep", "--no-preview", env=env)
+        check(code != 0 and os.path.exists(fbx), "invalid build fails and keeps the last good FBX")
+    finally:
+        shutil.rmtree(adir)
 
 
 def test_stale_cleanup(tmp):
@@ -142,6 +163,7 @@ def main():
             test_asset(n, tmp)
         if not sys.argv[1:]:
             test_validation(tmp)
+            test_failed_build_keeps_previous(tmp)
             test_stale_cleanup(tmp)
     print(f"\n{'FAILED ' + str(len(fails)) if fails else 'all passed'}")
     sys.exit(1 if fails else 0)
