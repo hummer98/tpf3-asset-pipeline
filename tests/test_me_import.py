@@ -89,5 +89,24 @@ try:
 except ValueError:
     check(True, "missing bbox raises")
 
+import tempfile
+with tempfile.TemporaryDirectory() as steam:
+    try:
+        m.find_userdata(steam, env={})
+        check(False, "no Steam account -> error")
+    except SystemExit:
+        check(True, "no Steam account -> error")
+    os.makedirs(os.path.join(steam, "userdata", "111", "3493540", "local"))
+    os.makedirs(os.path.join(steam, "userdata", "222", "999"))  # other game only
+    got = m.find_userdata(steam, env={})
+    check(got == os.path.join(steam, "userdata", "111", "3493540", "local", ""), f"single TF3 account picked {got}")
+    os.makedirs(os.path.join(steam, "userdata", "333", "3493540", "local"))
+    try:
+        m.find_userdata(steam, env={})
+        check(False, "two TF3 accounts -> ask for TF3_USERDATA")
+    except SystemExit:
+        check(True, "two TF3 accounts -> ask for TF3_USERDATA")
+    check(m.find_userdata(steam, env={"TF3_USERDATA": "/x/local"}) == "/x/local/", "TF3_USERDATA override, trailing /")
+
 print(f"\n{'FAILED ' + str(len(fails)) if fails else 'all passed'}")
 sys.exit(1 if fails else 0)

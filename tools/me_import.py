@@ -20,8 +20,22 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GAME = os.path.expanduser("~/.local/share/Steam/steamapps/common/Transport Fever 3")
-USERDATA = os.path.expanduser("~/.local/share/Steam/userdata/<steam_user_id>/3493540/local/")
+GAME = os.environ.get("TF3_GAME_DIR") or os.path.expanduser("~/.local/share/Steam/steamapps/common/Transport Fever 3")
+TF3_APP_ID = "3493540"
+
+
+def find_userdata(steam_root=os.path.expanduser("~/.local/share/Steam"), env=os.environ):
+    """TF3 'local/' userdata dir (trailing '/', the editor asserts it).
+    TF3_USERDATA overrides; otherwise the single Steam account that has TF3 data."""
+    if env.get("TF3_USERDATA"):
+        return os.path.join(env["TF3_USERDATA"], "")
+    base = os.path.join(steam_root, "userdata")
+    hits = sorted(os.path.join(base, u, TF3_APP_ID, "local", "")
+                  for u in (os.listdir(base) if os.path.isdir(base) else [])
+                  if os.path.isdir(os.path.join(base, u, TF3_APP_ID, "local")))
+    if len(hits) != 1:
+        raise SystemExit(f"cannot pick TF3 userdata ({len(hits)} candidates under {base}); set TF3_USERDATA")
+    return hits[0]
 SETTINGS = os.path.expanduser("~/.local/share/Transport Fever 3/model_editor_settings_v13.lua")
 LOG = os.path.join(ROOT, "model_editor.log")
 DEFAULT_MOD = "tf3_asset_sandbox_1"
@@ -165,7 +179,8 @@ def main():
     # Without the build report the bbox check can't run; a stale one would check the wrong shape.
     if not os.path.exists(report_path) or os.path.getmtime(report_path) < os.path.getmtime(fbx):
         sys.exit(f"build report missing or older than FBX: {report_path} (rebuild)")
-    mod_dir = os.path.join(USERDATA, "staging_area", a.mod)
+    userdata = find_userdata()
+    mod_dir = os.path.join(userdata, "staging_area", a.mod)
     if not os.path.isdir(mod_dir):
         sys.exit(f"target mod missing: {mod_dir} (the editor only lists staging_area mods)")
 
@@ -179,7 +194,7 @@ def main():
 
     with open(SETTINGS, encoding="utf-8") as f:
         text = f.read()
-    new = patch_settings(text, a.mod, USERDATA)
+    new = patch_settings(text, a.mod, userdata)
     if new != text:
         write_settings(new)
 

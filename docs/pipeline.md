@@ -5,7 +5,8 @@ Claude Code (または人間) が Python でモデルを書き、Transport Fever
 
 - 作成: 2026-11-15
 - 動作確認環境: Bazzite (Fedora Atomic) / KDE Plasma Wayland / RTX 3090 / Blender 5.3 (flatpak) / TF3 Model Editor version 13
-- 環境固有の値: Steam ユーザー ID `<steam_user_id>`、TF3 の app ID `3493540`、ゲームのパスは `tools/me_import.py` の先頭 (`GAME` / `USERDATA` / `SETTINGS`) に直書き。別環境ではここを書き換える。
+- 環境固有の値: TF3 の userdata は `~/.local/share/Steam/userdata/<SteamユーザーID>/3493540/local/` を自動検出する (TF3 のデータがあるアカウントが 1 つだけのとき)。
+  複数ある場合や場所が違う場合は環境変数 `TF3_USERDATA` (…/local)、ゲームの場所は `TF3_GAME_DIR` で指定する。
 
 ---
 
@@ -23,7 +24,7 @@ out/_preview/<name>/            … 人間/Claude が見るもの
         │
         │  .venv/bin/python tools/me_import.py <name>           (Model Editor 自動操作, ~10秒)
         ▼
-~/.local/share/Steam/userdata/<steam_user_id>/3493540/local/staging_area/tf3_asset_sandbox_1/content/<name>/
+<userdata>/local/staging_area/tf3_asset_sandbox_1/content/<name>/
     <name>.mdl, msh/<name>_lodN.msh(.blob), mat/*.mtl, mat/tex/*.dds
 ```
 
@@ -184,7 +185,7 @@ XDND のドラッグ元として、次の順にやり取りする。
 | `importOptions.blenderMode` | `true` | UI の "Use Blender Coordinate System"。false だとログに "legacy axis system convention" と出る。`constructionImportOptions.blenderMode` は別物なので触らない |
 | `importOptions.overwriteMeshes/Materials/Textures` | `true` | false だと再取り込み時に MOD 内の古い `.msh`/`.mtl`/`.dds` が使い回され (`Found mesh to reuse`)、形を直しても反映されない |
 | `pathOptions.lastOpenedMod` | `{ "<--mod の値>", }` (既定 `tf3_asset_sandbox_1`) | 保存先 MOD。設定ファイルは**起動時にしか読まれない** |
-| `pathOptions.userDataPath` | `.../3493540/local/` (末尾 `/` 必須) | 空だと起動時に "please add the path to your userdata directory" と出て止まる |
+| `pathOptions.userDataPath` | 自動検出した `.../3493540/local/` (末尾 `/` 必須) | 空だと起動時に "please add the path to your userdata directory" と出て止まる |
 
 この設定は起動前に書き換え、**元に戻さない** (途中で失敗した実行でも書き換わる)。手で Model Editor を使うときもこの設定のまま。
 元の設定は `model_editor_settings_v13.lua.bak-20261115` に残してある。
@@ -227,7 +228,7 @@ XDND のドラッグ元として、次の順にやり取りする。
 - bbox の照合は軸ごとの長さだけ。Y と Z が同じ長さのモデルでは向きの誤りを見逃す。LOD1 は照合していない。
 - Save ボタンの座標 (74,14) は UI スケール 1 が前提。
 - XDND のタイムスタンプは `CurrentTime` (ICCCM では非推奨だが SDL2 では動く)。
-- 環境固有のパス・ID は `me_import.py` に直書き (§冒頭)。
+- Linux + Steam (ネイティブ版) + KDE Wayland/XWayland でのみ確認。Windows では動かない (X11 前提)。
 - ゲーム内での見た目は未確認。staging_area の MOD がゲーム側で読み込まれるかも未確認。
 - 今後の候補 (2026-11-15 の調査より): Blender MCP (Blender Lab 公式) で対話的にモデリングする、TRELLIS.2 (ComfyUI) で画像から 3D の下書きを作る、nanobanana-adc でテクスチャ素材を作る。
 
