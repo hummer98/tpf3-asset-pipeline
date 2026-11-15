@@ -22,9 +22,12 @@ return {
 			blenderMode = false,
 			scale = 100,
 		},
-		importOptions = {
+		importOptions = { 
 			blenderMode = false,
+			overwriteAnimations = false,
+			overwriteMaterials = false,
 			overwriteMeshes = false,
+			overwriteTextures = false,
 		},
 		pathOptions = {
 			lastOpenedMod = { "", },
@@ -41,12 +44,30 @@ check("blenderMode = true" in io, "model import blenderMode set")
 check('lastOpenedMod = { "sandbox_1", }' in out, "lastOpenedMod set")
 check('userDataPath = "/u/local/"' in out, "userDataPath set")
 check(m.patch_settings(out, "sandbox_1", "/u/local/") == out, "patch is idempotent")
-check("overwriteMeshes = false" in out and "scale = 100" in out, "other keys preserved")
+check(all(f"{k} = true" in io for k in ("overwriteMeshes", "overwriteMaterials", "overwriteTextures")),
+      "overwrite toggles on (else re-import reuses stale .msh/.mtl/.dds)")
+check("overwriteAnimations = false" in io and "scale = 100" in out, "other keys preserved")
 try:
     m.patch_settings("function data() return { } end", "x", "/")
     check(False, "missing section raises")
 except ValueError:
     check(True, "missing section raises")
+
+# Real settings file layout: trailing space after "{", nested tables in other sections.
+REAL = open(os.path.join(ROOT, "tests", "fixtures", "model_editor_settings_v13.lua")).read()
+out = m.patch_settings(REAL, "sandbox_1", "/u/local/")
+check(out.count("blenderMode = true") == 1, "real settings: exactly one blenderMode flipped")
+check(len(out.splitlines()) == len(REAL.splitlines()), "real settings: line count unchanged")
+check('externalModPath = ""' in out and "pixelsPerMeter = 320" in out, "real settings: unrelated keys intact")
+
+for log, want in [
+    ("x\nValidation: no errors!\n", (True, True)),
+    ("Validation: 2 errors\n", (True, False)),
+    ("Validation: no errors!\n...\nValidation: 1 error\n", (True, False)),
+    ("nothing yet", (False, False)),
+]:
+    got = m.validation_result(log)[:2]
+    check(got == want, f"validation_result {log!r} -> {got}")
 
 MDL = '''function data()
 return {

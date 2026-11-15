@@ -106,8 +106,12 @@ def drop_files(d, target, xdnd_version, paths, timeout=30):
             _client_message(d, target, "XdndLeave", [src.id])
             raise RuntimeError("target did not accept the drop")
         _client_message(d, target, "XdndDrop", [src.id, 0, X.CurrentTime])
-        if pump("XdndFinished") is None:
+        fin = pump("XdndFinished")
+        if fin is None:
+            _client_message(d, target, "XdndLeave", [src.id])
             raise RuntimeError("no XdndFinished from target")
+        if version >= 5 and not fin:
+            raise RuntimeError("target finished but rejected the drop")
     finally:
         src.destroy()
         d.flush()
